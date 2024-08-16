@@ -1,3 +1,6 @@
+import java.io.File
+
+
 sealed interface Command {
     fun isValid(): Boolean
 }
@@ -24,11 +27,15 @@ data class FindCommand(val query: String) : Command {
     override fun isValid(): Boolean = query.isNotBlank()
 }
 
-object ExitCommand : Command {
+data class ExportCommand(val filePath: String) : Command {
+    override fun isValid(): Boolean = filePath.isNotBlank()
+}
+
+data object ExitCommand : Command {
     override fun isValid(): Boolean = true
 }
 
-object HelpCommand : Command {
+data object HelpCommand : Command {
     override fun isValid(): Boolean = true
 }
 
@@ -40,6 +47,51 @@ data class Person(
 )
 
 
+class JsonObject {
+    private val properties = mutableListOf<Pair<String, String>>()
+
+    fun addProperty(name: String, value: String) {
+        properties.add(name to "\"$value\"")
+    }
+
+    fun addArrayProperty(name: String, array: JsonArray) {
+        properties.add(name to array.toString())
+    }
+
+    override fun toString(): String {
+        return properties.joinToString(prefix = "{", postfix = "}") { "\"${it.first}\": ${it.second}" }
+    }
+}
+
+class JsonArray {
+    private val items = mutableListOf<String>()
+
+    fun addItem(value: String) {
+        items.add("\"$value\"")
+    }
+
+    fun addObjectItem(obj: JsonObject) {
+        items.add(obj.toString())
+    }
+
+    override fun toString(): String {
+        return items.joinToString(prefix = "[", postfix = "]")
+    }
+}
+
+fun jsonObject(init: JsonObject.() -> Unit): JsonObject {
+    val obj = JsonObject()
+    obj.init()
+    return obj
+}
+
+fun jsonArray(init: JsonArray.() -> Unit): JsonArray {
+    val array = JsonArray()
+    array.init()
+    return array
+}
+
+
 fun readCommand(): Command {
     val input = readlnOrNull() ?: return HelpCommand
 
@@ -49,11 +101,41 @@ fun readCommand(): Command {
         input == "help" -> HelpCommand
         parts.size == 2 && parts[0] == "show" -> ShowCommand(parts[1])
         parts.size == 2 && parts[0] == "find" -> FindCommand(parts[1])
+        input.startsWith("export ") -> ExportCommand(input.removePrefix("export ").trim())
         parts.size == 4 && parts[0] == "add" && parts[2] == "phone" -> AddPhoneCommand(parts[1], parts[3])
         parts.size == 4 && parts[0] == "add" && parts[2] == "email" -> AddEmailCommand(parts[1], parts[3])
         else -> HelpCommand
     }
 }
+
+
+
+fun exportToJsonFile(phoneBook: Map<String, Person>, filePath: String) {
+    val jsonArray = jsonArray {
+        phoneBook.values.forEach { person ->
+            addObjectItem(
+                jsonObject {
+                    addProperty("name", person.name)
+                    addArrayProperty("phones", jsonArray {
+                        person.phones.forEach { addItem(it) }
+                    })
+                    addArrayProperty("emails", jsonArray {
+                        person.emails.forEach { addItem(it) }
+                    })
+                }
+            )
+        }
+    }
+
+    val file = File(filePath)
+    try {
+        file.writeText(jsonArray.toString())
+        println("Данные успешно экспортированы в файл: $filePath")
+    } catch (e: Exception) {
+        println("Ошибка: Не удалось записать данные в файл. ${e.message}")
+    }
+}
+
 
 
 fun main() {
@@ -76,6 +158,7 @@ fun main() {
             println("add <Имя> email <Адрес электронной почты> - добавить адрес электронной почты")
             println("show <Имя> - показать телефоны и email для человека")
             println("find <Телефон или Email> - найти человека по телефону или email")
+            println("export <Путь к файлу> - экспортировать данные в файл JSON")
             continue
         }
 
@@ -111,6 +194,9 @@ fun main() {
                     println("Не найдено ни одного человека с указанным телефоном или email.")
                 }
             }
+            is ExportCommand -> {
+                exportToJsonFile(phoneBook, command.filePath)
+            }
             is ExitCommand -> {
                 println("Выход из программы.")
                 break
@@ -123,6 +209,7 @@ fun main() {
                 println("add <Имя> email <Адрес электронной почты> - добавить адрес электронной почты")
                 println("show <Имя> - показать телефоны и email для человека")
                 println("find <Телефон или Email> - найти человека по телефону или email")
+                println("export <Путь к файлу> - экспортировать данные в файл JSON")
             }
         }
     }
